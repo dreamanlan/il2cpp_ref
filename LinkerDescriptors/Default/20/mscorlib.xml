@@ -1,0 +1,79 @@
+<linker>
+	<!-- Don't reference anything other than mscorlib in this file -->
+	<assembly fullname="mscorlib">
+		<!-- Not needed in new profiles.  Embedded in mscorlib.dll link xml-->
+		<type fullname="Mono.Runtime" preserve="fields">
+			<method name="GetDisplayName"/>
+		</type>
+		<type fullname="System.MonoType" preserve="fields"/>
+		<type fullname="System.AppDomain" preserve="fields"/>
+		<type fullname="System.AppDomainSetup" preserve="fields"/>
+		<type fullname="System.Delegate" preserve="fields"/>
+		<type fullname="System.MarshalByRefObject" preserve="fields"/>
+		<type fullname="System.DBNull" preserve="fields"/>
+		<type fullname="System.String" preserve="fields">
+			<method name="CreateString"/>
+		</type>
+		<type fullname="System.Object" preserve="fields">
+			<method name="Finalize"/>
+			<method name="GetHashCode"/>
+		</type>
+		<type fullname="System.Environment" preserve="nothing">
+			<field name="mono_corlib_version"/>
+		</type>
+
+		<type fullname="System.Collections.Generic.ICollection`1" preserve="all"/>
+		<type fullname="System.Collections.Generic.IEnumerable`1" preserve="all"/>
+		<type fullname="System.Collections.Generic.IReadOnlyList`1" preserve="all"/>
+		<type fullname="System.Collections.Generic.IReadOnlyCollection`1" preserve="all"/>
+		<type fullname="System.Collections.Generic.IList`1" preserve="all"/>
+
+		<type fullname="System.IntPtr" preserve="fields" />
+		<type fullname="System.UIntPtr" preserve="fields" />
+
+		<type fullname="System.Diagnostics.StackFrame" preserve="fields"/>
+		<type fullname="System.Diagnostics.StackTrace" preserve="fields"/>
+
+		<type fullname="System.TypedReference" preserve="fields" />
+
+		<!-- System.Reflection -->
+		<type fullname="System.Reflection.MonoModule" preserve="fields"/>
+		<type fullname="System.Reflection.MonoAssembly" preserve="fields"/>
+		<type fullname="System.Reflection.Assembly" preserve="fields" />
+		<type fullname="System.Reflection.AssemblyName" preserve="fields" />
+		<type fullname="System.Reflection.Module" preserve="fields" />
+		<type fullname="System.Reflection.ConstructorInfo" preserve="fields" />
+		<type fullname="System.Reflection.EventInfo" preserve="fields" />
+		<type fullname="System.Reflection.FieldInfo" preserve="fields" />
+		<type fullname="System.Reflection.MethodInfo" preserve="fields" />
+		<type fullname="System.Reflection.Missing" preserve="fields" />
+		<type fullname="System.Reflection.MonoCMethod" preserve="fields" />4
+		<type fullname="System.Reflection.MonoEvent" preserve="fields" />
+		<type fullname="System.Reflection.MonoEventInfo" preserve="fields" />
+		<type fullname="System.Reflection.MonoField" preserve="fields" />
+		<type fullname="System.Reflection.MonoMethod" preserve="fields" />
+		<type fullname="System.Reflection.MonoMethodInfo" preserve="fields" />
+		<type fullname="System.Reflection.MonoPropertyInfo" preserve="fields" />
+		<type fullname="System.Reflection.ParameterInfo" preserve="fields" />
+
+		<type fullname="System.Globalization.CultureInfo" preserve="fields">
+			<method name="CreateCulture"/>
+		</type>
+		<type fullname="System.Globalization.DateTimeFormatInfo" preserve="fields"/>
+		<type fullname="System.Globalization.NumberFormatInfo" preserve="fields"/>
+		<type fullname="System.Globalization.SortKey" preserve="fields"/>
+
+		<type fullname="System.Text.StringBuilder" preserve="fields"/>
+
+		<type fullname="System.Threading.Thread" preserve="fields"/>
+		<type fullname="System.Threading.WaitHandle" preserve="fields"/>
+
+		<!-- Used by projected method body writers -->
+		<type fullname="System.ArgumentOutOfRangeException" preserve="nothing">
+			<method signature="System.Void .ctor(System.String)"/>
+		</type>
+		<type fullname="System.Reflection.Pointer" >
+			<method name="Box" />
+		</type>
+	</assembly>
+</linker>

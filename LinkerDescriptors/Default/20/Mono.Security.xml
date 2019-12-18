@@ -1,0 +1,8 @@
+<linker>
+	<assembly fullname="Mono.Security">
+        <type fullname="Mono.Security.Protocol.Tls.HttpsClientStream" preserve="all"/>
+        <type fullname="Mono.Security.Protocol.Tls.SslClientStream" preserve="all"/>
+        <type fullname="Mono.Security.Protocol.Tls.SslStreamBase" preserve="all"/>
+	</assembly>
+</linker>
+
