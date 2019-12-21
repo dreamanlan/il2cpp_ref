@@ -667,6 +667,12 @@ GC_allochblk(size_t sz, int kind, unsigned flags/* IGNORE_OFF_PAGE or 0 */)
     return result;
 }
 
+STATIC void log_on_heap_resize(uint tag, uint val)
+{
+    if (GC_on_heap_resize)
+      (*GC_on_heap_resize)(0xc0000000ull+(tag<<20)+val);
+}
+
 STATIC long GC_large_alloc_warn_suppressed = 0;
                         /* Number of warnings suppressed so far.        */
 
@@ -678,6 +684,12 @@ STATIC long GC_large_alloc_warn_suppressed = 0;
 STATIC struct hblk *
 GC_allochblk_nth(size_t sz, int kind, unsigned flags, int n, int may_split)
 {
+	int after_expand = (flags & 0x80000000) ? 1 : 0;
+	flags = (flags & 0x3fffffff);
+	
+    if (after_expand && GC_on_heap_resize)
+      (*GC_on_heap_resize)(0x80000000ull+(flags<<28)+(kind<<26)+(n<<19)+(may_split<<18)+sz);
+	
     struct hblk *hbp;
     hdr * hhdr;                 /* Header corr. to hbp */
     struct hblk *thishbp;
@@ -686,7 +698,8 @@ GC_allochblk_nth(size_t sz, int kind, unsigned flags, int n, int may_split)
                                 /* number of bytes in requested objects */
 
     /* search for a big enough block in free list */
-        for (hbp = GC_hblkfreelist[n];; hbp = hhdr -> hb_next) {
+		int ix = 0;
+        for (hbp = GC_hblkfreelist[n];; hbp = hhdr -> hb_next,++ix) {
             signed_word size_avail; /* bytes available in this block */
 
             if (NULL == hbp) return NULL;
@@ -704,13 +717,19 @@ GC_allochblk_nth(size_t sz, int kind, unsigned flags, int n, int may_split)
 
                 GET_HDR(thishbp, thishdr);
                 next_size = (signed_word)(thishdr -> hb_sz);
-                if (next_size < size_avail
+				//如果是在expand后，则使用最早的满足条件的块
+                if (!after_expand
+					&& next_size < size_avail
                     && next_size >= size_needed
                     && !GC_is_black_listed(thishbp, (word)size_needed)) {
                     continue;
                 }
               }
-            }
+            }			
+			
+			if(after_expand)
+				log_on_heap_resize(1, ix);
+			
             if (!IS_UNCOLLECTABLE(kind) && (kind != PTRFREE
                         || size_needed > (signed_word)MAX_BLACK_LIST_ALLOC)) {
               struct hblk * lasthbp = hbp;
@@ -727,8 +746,20 @@ GC_allochblk_nth(size_t sz, int kind, unsigned flags, int n, int may_split)
               }
               size_avail -= (ptr_t)lasthbp - (ptr_t)hbp;
               thishbp = lasthbp;
+			 
+			  if(after_expand)
+				log_on_heap_resize(2, ix);
+			  
               if (size_avail >= size_needed) {
+
+				if(after_expand)
+				  log_on_heap_resize(3, ix);
+			  
                 if (thishbp != hbp) {
+			 
+				  if(after_expand)
+					log_on_heap_resize(4, ix);
+				
 #                 ifdef USE_MUNMAP
                     /* Avoid remapping followed by splitting.   */
                     if (may_split == AVOID_SPLIT_REMAPPED && !IS_MAPPED(hhdr))
@@ -736,9 +767,17 @@ GC_allochblk_nth(size_t sz, int kind, unsigned flags, int n, int may_split)
 #                 endif
                   thishdr = GC_install_header(thishbp);
                   if (0 != thishdr) {
+					
+					if(after_expand)
+					  log_on_heap_resize(5, ix);
+								  	
                   /* Make sure it's mapped before we mangle it. */
 #                   ifdef USE_MUNMAP
                       if (!IS_MAPPED(hhdr)) {
+						
+						if(after_expand)
+						  log_on_heap_resize(6, ix);
+								  	
                         GC_remap((ptr_t)hbp, (size_t)hhdr->hb_sz);
                         hhdr -> hb_flags &= ~WAS_UNMAPPED;
                       }
@@ -765,10 +804,21 @@ GC_allochblk_nth(size_t sz, int kind, unsigned flags, int n, int may_split)
                   GC_large_alloc_warn_suppressed = 0;
                 }
                 size_avail = orig_avail;
+				
+				if(after_expand)
+				  log_on_heap_resize(7, ix);
+				
               } else if (size_avail == 0 && size_needed == HBLKSIZE
                          && IS_MAPPED(hhdr)) {
+				
+				if(after_expand)
+				  log_on_heap_resize(8, ix);
+				
                 if (!GC_find_leak) {
                   static unsigned count = 0;
+					
+					if(after_expand)
+					  log_on_heap_resize(9, ix);
 
                   /* The block is completely blacklisted.  We need      */
                   /* to drop some such blocks, since otherwise we spend */
@@ -776,6 +826,10 @@ GC_allochblk_nth(size_t sz, int kind, unsigned flags, int n, int may_split)
                   /* blocks are unpopular.                              */
                   /* A dropped block will be reconsidered at next GC.   */
                   if ((++count & 3) == 0) {
+					
+					if(after_expand)
+					  log_on_heap_resize(10, ix);
+					
                     /* Allocate and drop the block in small chunks, to  */
                     /* maximize the chance that we will recover some    */
                     /* later.                                           */
@@ -808,7 +862,11 @@ GC_allochblk_nth(size_t sz, int kind, unsigned flags, int n, int may_split)
                   }
                 }
               }
-            }
+            }			
+			
+			if(after_expand)
+			  log_on_heap_resize(11, ix);
+					
             if( size_avail >= size_needed ) {
 #               ifdef USE_MUNMAP
                   if (!IS_MAPPED(hhdr)) {
@@ -820,21 +878,35 @@ GC_allochblk_nth(size_t sz, int kind, unsigned flags, int n, int may_split)
                 /* hbp may be on the wrong freelist; the parameter n    */
                 /* is important.                                        */
                 hbp = GC_get_first_part(hbp, hhdr, size_needed, n);
+				
+				if(after_expand)
+				  log_on_heap_resize(12, ix);
+
                 break;
             }
         }
 
     if (0 == hbp) return 0;
+	
+	if(after_expand)
+	  log_on_heap_resize(13, ix);
 
     /* Add it to map of valid blocks */
         if (!GC_install_counts(hbp, (word)size_needed)) return(0);
         /* This leaks memory under very rare conditions. */
+	
+	if(after_expand)
+	  log_on_heap_resize(14, ix);
 
     /* Set up header */
         if (!setup_header(hhdr, hbp, sz, kind, flags)) {
             GC_remove_counts(hbp, (word)size_needed);
             return(0); /* ditto */
         }
+	
+	if(after_expand)
+	  log_on_heap_resize(15, ix);
+	
 #   ifndef GC_DISABLE_INCREMENTAL
         /* Notify virtual dirty bit implementation that we are about to */
         /* write.  Ensure that pointer-free objects are not protected   */
@@ -848,6 +920,9 @@ GC_allochblk_nth(size_t sz, int kind, unsigned flags, int n, int may_split)
     /* We just successfully allocated a block.  Restart count of        */
     /* consecutive failures.                                            */
     GC_fail_count = 0;
+	
+	if(after_expand)
+	  log_on_heap_resize(16, ix);
 
     GC_large_free_bytes -= size_needed;
     GC_ASSERT(IS_MAPPED(hhdr));

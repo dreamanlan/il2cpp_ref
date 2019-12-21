@@ -62,7 +62,7 @@ GC_INNER ptr_t GC_alloc_large(size_t lb, int k, unsigned flags)
         }
 #   endif
     while (0 == h && GC_collect_or_expand(n_blocks, flags != 0, retry)) {
-        h = GC_allochblk(lb, k, flags);
+        h = GC_allochblk(lb, k, flags | 0x80000000);
         retry = TRUE;
     }
     if (h == 0) {

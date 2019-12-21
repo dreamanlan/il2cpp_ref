@@ -1471,14 +1471,22 @@ GC_INNER GC_bool GC_collect_or_expand(word needed_blocks,
       }
     }
 
+	/*
     blocks_to_get = (GC_heapsize - GC_heapsize_at_forced_unmap)
                         / (HBLKSIZE * GC_free_space_divisor)
                     + needed_blocks;
-	
+	*/
+	//申请数<256则按2倍值扩展，最多扩展256，申请数>=256，按实际数扩展
+	if(needed_blocks<256){
+		blocks_to_get = needed_blocks * 2;
+		if(blocks_to_get > 256)
+			blocks_to_get = 256;		
+	}
+	else{
+		blocks_to_get = needed_blocks;
+	}
     if (GC_on_heap_resize)
-      (*GC_on_heap_resize)(0x40000000ull+GC_heapsize_at_forced_unmap);
-    if (GC_on_heap_resize)
-      (*GC_on_heap_resize)(0x80000000ull+blocks_to_get);
+      (*GC_on_heap_resize)(0x40000000ull+needed_blocks+(ignore_off_page ? 0x10000000 : 0)+(retry ? 0x20000000 : 0));
     if (blocks_to_get > MAXHINCR) {
       word slop;
 
@@ -1499,6 +1507,8 @@ GC_INNER GC_bool GC_collect_or_expand(word needed_blocks,
       if (blocks_to_get > divHBLKSZ(GC_WORD_MAX))
         blocks_to_get = divHBLKSZ(GC_WORD_MAX);
     }
+    if (GC_on_heap_resize)
+      (*GC_on_heap_resize)(0x80000000ull+GC_heapsize_at_forced_unmap);
     if (GC_on_heap_resize)
       (*GC_on_heap_resize)(0xc0000000ull+blocks_to_get);
     if (!GC_expand_hp_inner(blocks_to_get)

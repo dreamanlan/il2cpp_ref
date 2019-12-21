@@ -1,0 +1,62 @@
+C++RAW
+
+#include "UnityPrefix.h"
+#include "Runtime/Scripting/ScriptingExportUtility.h"
+#if ENABLE_PROFILER
+#include "Modules/ProfilerEditor/Public/EditorProfilerConnection.h"
+#include "Modules/Profiler/Public/ProfilerConnection.h"
+#endif
+
+extern void StartGcResizeLogger(const char* file);
+extern void StopGcResizeLogger(void);
+
+CSRAW
+using System;
+using UnityEngine;
+using Object = UnityEngine.Object;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Collections;
+using System.Collections.Generic;
+
+// m1 code
+namespace UnityEngine
+{
+    CLASS UnityM1Extension
+
+		CUSTOM static void CaptureMemorySnapshot(string file, uint captureFlags)
+        {
+#if ENABLE_PROFILER
+			core::string cppPath = file;
+#if ENABLE_IL2CPP
+			il2cpp_dumping_memory(true);
+#endif
+#if UNITY_EDITOR
+    		EditorProfilerConnection::Get().TakeMemorySnapshot(cppPath, (MemorySnaphotContentFlags)captureFlags);
+#else
+    		ProfilerConnection::Get().TakeMemorySnapshot(cppPath, (MemorySnaphotContentFlags)captureFlags);
+#endif
+#if ENABLE_IL2CPP
+			il2cpp_dumping_memory(false);
+#endif
+#endif
+        }
+		CUSTOM static void StartGcResizeLogger(string file)
+        {
+#if ENABLE_PROFILER
+#if PLATFORM_ANDROID
+			core::string cppPath = file;
+			::StartGcResizeLogger(cppPath.c_str());
+#endif
+#endif
+        }
+		CUSTOM static void StopGcResizeLogger()
+        {
+#if ENABLE_PROFILER
+#if PLATFORM_ANDROID
+			::StopGcResizeLogger();
+#endif
+#endif
+        }
+	END
+}

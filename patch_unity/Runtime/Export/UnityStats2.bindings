@@ -1,0 +1,123 @@
+C++RAW
+#include "UnityPrefix.h"
+#include "Runtime/Scripting/ScriptingExportUtility.h"
+
+#include "Runtime/GfxDevice/GfxDevice.h"
+#include "Modules/Audio/Public/AudioManager.h"
+#include "Runtime/Graphics/RenderTexture.h"
+#include "Runtime/Graphics/Mesh/SkinnedMeshRenderer.h"
+#include "Runtime/Animation/AnimationManager.h"
+
+CSRAW
+using System;
+using UnityEngine;
+using Object = UnityEngine.Object;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Collections;
+using System.Collections.Generic;
+
+// m1 code
+namespace UnityEngine
+{
+
+    //*undocumented*
+    // Undocumented, but left public. Some people want to figure out draw calls from editor scripts to do some performance checking
+    // optimizations.
+    CLASS UnityStats2
+        // The number of batches rendered this frame.
+        CUSTOM_PROP static int batches { return GetGfxDevice().GetFrameStats().GetDrawStats().batches; }
+        // The number of draw calls made this frame.
+        CUSTOM_PROP static int drawCalls { return GetGfxDevice().GetFrameStats().GetDrawStats().calls; }
+        // The number of draw calls that got dynamically batched this frame.
+        CUSTOM_PROP static int dynamicBatchedDrawCalls { return GetGfxDevice().GetFrameStats().GetDrawStats().dynamicBatchedCalls; }
+        // The number of draw calls that got statically batched this frame.
+        CUSTOM_PROP static int staticBatchedDrawCalls { return GetGfxDevice().GetFrameStats().GetDrawStats().staticBatchedCalls; }
+        // The number of draw calls that got instanced this frame.
+        CUSTOM_PROP static int instancedBatchedDrawCalls { return GetGfxDevice().GetFrameStats().GetDrawStats().instancedBatchedCalls; }
+        // The number of dynamic batches rendered this frame.
+        CUSTOM_PROP static int dynamicBatches { return GetGfxDevice().GetFrameStats().GetDrawStats().dynamicBatches; }
+        // The number of static batches rendered this frame.
+        CUSTOM_PROP static int staticBatches { return GetGfxDevice().GetFrameStats().GetDrawStats().staticBatches; }
+        // The number of instanced batches rendered this frame.
+        CUSTOM_PROP static int instancedBatches { return GetGfxDevice().GetFrameStats().GetDrawStats().instancedBatches; }
+        // The number of calls to SetPass.
+        CUSTOM_PROP static int setPassCalls { return GetGfxDevice().GetFrameStats().GetDrawStats().setPassCalls; }
+
+        CUSTOM_PROP static int triangles { return GetGfxDevice().GetFrameStats().GetDrawStats().tris; }
+        CUSTOM_PROP static int vertices { return GetGfxDevice().GetFrameStats().GetDrawStats().verts; }
+
+        // Temporary API for game view stats window, so it can display proper numbers for >2B cases. Profiling Counters API
+        // should happen in the future to solve this properly.
+        CUSTOM_PROP internal static long trianglesLong { return GetGfxDevice().GetFrameStats().GetDrawStats().tris; }
+        CUSTOM_PROP internal static long verticesLong { return GetGfxDevice().GetFrameStats().GetDrawStats().verts; }
+
+        // The number of shadow casters rendered in this frame.
+        CUSTOM_PROP static int shadowCasters { return GetGfxDevice().GetFrameStats().GetClientStats().shadowCasters; }
+        // The number of render texture changes made this frame.
+        CUSTOM_PROP static int renderTextureChanges { return GetGfxDevice().GetFrameStats().GetStateChanges().renderTexture; }
+
+        CUSTOM_PROP static float frameTime { return GetGfxDevice().GetFrameStats().GetClientFrameTime(); }
+        CUSTOM_PROP static float renderTime { return GetGfxDevice().GetFrameStats().GetRenderFrameTime(); }
+
+        //CUSTOM_PROP static float audioLevel { return GetAudioManager().GetMasterGroupLevel(); }
+        //CUSTOM_PROP static float audioClippingAmount { return GetAudioManager().GetMasterGroupClippingAmount(); }
+        //CUSTOM_PROP static float audioDSPLoad { return GetAudioManager().GetDSPLoad(); }
+        //CUSTOM_PROP static float audioStreamLoad { return GetAudioManager().GetStreamLoad(); }
+
+        CUSTOM_PROP static int renderTextureCount { return RenderTexture::GetCreatedRenderTextureCount(); }
+        CUSTOM_PROP static int renderTextureBytes { return RenderTexture::GetCreatedRenderTextureBytes(); }
+        CUSTOM_PROP static int usedTextureMemorySize
+        {
+        #if ENABLE_PROFILER
+            return GetGfxDevice().GetFrameStats().GetDrawStats().usedTextureBytes;
+        #else
+            return 0;
+        #endif
+        }
+        CUSTOM_PROP static int usedTextureCount
+        {
+        #if ENABLE_PROFILER
+            return GetGfxDevice().GetFrameStats().GetDrawStats().usedTextureCount;
+        #else
+            return 0;
+        #endif
+        }
+
+        CUSTOM_PROP static string screenRes
+        {
+            const GfxDeviceStats::MemoryStats& mem = GetGfxDevice().GetFrameStats().GetMemoryStats();
+            return scripting_string_new(Format("%ix%i", mem.screenWidth, mem.screenHeight));
+        }
+        CUSTOM_PROP static int screenBytes
+        {
+            return GetGfxDevice().GetFrameStats().GetMemoryStats().screenBytes;
+        }
+
+        CUSTOM_PROP static int vboTotal { return GetGfxDevice().GetTotalBufferCount(); }
+        CUSTOM_PROP static int vboTotalBytes { return GetGfxDevice().GetTotalBufferBytes(); }
+
+        CUSTOM_PROP static int vboUploads { return GetGfxDevice().GetFrameStats().GetStateChanges().vboUploads; }
+        CUSTOM_PROP static int vboUploadBytes { return GetGfxDevice().GetFrameStats().GetStateChanges().vboUploadBytes; }
+        CUSTOM_PROP static int ibUploads { return GetGfxDevice().GetFrameStats().GetStateChanges().ibUploads; }
+        CUSTOM_PROP static int ibUploadBytes { return GetGfxDevice().GetFrameStats().GetStateChanges().ibUploadBytes; }
+
+        CUSTOM_PROP static int visibleSkinnedMeshes
+        {
+        #if ENABLE_PROFILER
+            return SkinnedMeshRenderer::GetVisibleSkinnedMeshRendererCount();
+        #else
+            return 0;
+        #endif
+        }
+        CUSTOM_PROP static int visibleAnimations
+        {
+        #if ENABLE_PROFILER
+            return GetAnimationManager().GetUpdatedAnimationCount();
+        #else
+            return 0;
+        #endif
+        }
+    END
+
+}
