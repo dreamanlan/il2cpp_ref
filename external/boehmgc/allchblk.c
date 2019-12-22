@@ -752,8 +752,10 @@ GC_allochblk_nth(size_t sz, int kind, unsigned flags, int n, int may_split)
             signed_word eff_size_needed = (flags & IGNORE_OFF_PAGE) != 0 ?
                 (signed_word)HBLKSIZE
                 : size_needed;
-
-            while ((word)lasthbp <= (word)search_end
+			
+			//如果是在堆扩展后的分配，就不检查black_list了，实际发现项目的大内存分配有非常高的概率卡在这
+            while (!after_expand
+				&& (word)lasthbp <= (word)search_end
                 && (thishbp = GC_is_black_listed(lasthbp,
                 (word)eff_size_needed)) != 0) {
                 lasthbp = thishbp;
