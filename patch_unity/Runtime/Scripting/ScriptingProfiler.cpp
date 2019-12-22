@@ -7,6 +7,7 @@
 #include "Runtime/Profiler/Recorder.h"
 #include "Modules/Profiler/Public/Profiler.h"
 #include "Runtime/Profiler/MemoryProfilerStats.h"
+#include "Runtime/Allocator/MemoryManager.h"
 #include "Runtime/Scripting/CommonScriptingClasses.h"
 #include "Runtime/Scripting/ScriptingObjectOfType.h"
 #include "Runtime/ScriptingBackend/ScriptingApi.h"
@@ -29,26 +30,45 @@
 #include <dlfcn.h>
 #include <android/log.h>
 
-class BacktraceLogger
+namespace
 {
-	static const int c_file_path_size = 1024;
-	static const int c_queue_size = 1024;
-	static const int c_log_size = 1024;
-public:
-	BacktraceLogger(void):m_Head(0),m_Tail(0)
+	class BacktraceLogger
 	{
-		m_GcResizeCaptureFile[0]=0;
-	}
-public:
-	void Start(const char* file)
-	{
-		snprintf(m_GcResizeCaptureFile, c_file_path_size, "%s", file);
-		m_GcResizeCaptureFile[c_file_path_size]=0;
-	}
-	void Log(const char* prefix, size_t idx, const void* addr, const char* symbol)
-	{
-		if((m_Tail+1)%(c_queue_size+1)==m_Head){
-			FILE* fp = fopen(m_GcResizeCaptureFile, "ab+");
+		static const int c_file_path_size = 1024;
+		static const int c_queue_size = 1024;
+		static const int c_log_size = 1024;
+	public:
+		BacktraceLogger(void):m_Head(0),m_Tail(0)
+		{
+			m_GcCaptureFile[0]=0;
+		}
+	public:
+		void Start(const char* file)
+		{
+			snprintf(m_GcCaptureFile, c_file_path_size, "%s", file);
+			m_GcCaptureFile[c_file_path_size]=0;
+		}
+		void Log(const char* prefix, size_t idx, const void* addr, const void* raddr, const char* symbol, const char* file)
+		{
+			if((m_Tail+1)%(c_queue_size+1)==m_Head){
+				FILE* fp = fopen(m_GcCaptureFile, "ab+");
+				if(NULL!=fp){
+					while((m_Head+1)%(c_queue_size+1)!=m_Tail){
+						const char* line = m_Buffer[m_Head];
+						m_Head=(m_Head+1)%(c_queue_size+1);
+
+						fprintf(fp,"%s\r\n",line);
+					}
+					fclose(fp);
+				}
+			}
+			snprintf(m_Buffer[m_Tail],c_log_size,"%s #%d:%p %p %s|%s", prefix, idx, addr, raddr, symbol, file);
+			m_Buffer[m_Tail][c_log_size]=0;
+			m_Tail = (m_Tail+1)%(c_queue_size+1);
+		}
+		void Flush(void)
+		{
+			FILE* fp = fopen(m_GcCaptureFile, "ab+");
 			if(NULL!=fp){
 				while((m_Head+1)%(c_queue_size+1)!=m_Tail){
 					const char* line = m_Buffer[m_Head];
@@ -59,46 +79,20 @@ public:
 				fclose(fp);
 			}
 		}
-		snprintf(m_Buffer[m_Tail],c_log_size,"%s #%d:%p %s", prefix, idx, addr, symbol);
-		m_Buffer[m_Tail][c_log_size]=0;
-		m_Tail = (m_Tail+1)%(c_queue_size+1);
-	}
-	void Flush(void)
-	{
-		FILE* fp = fopen(m_GcResizeCaptureFile, "ab+");
-		if(NULL!=fp){
-			while((m_Head+1)%(c_queue_size+1)!=m_Tail){
-				const char* line = m_Buffer[m_Head];
-				m_Head=(m_Head+1)%(c_queue_size+1);
+	private:
+		char m_GcCaptureFile[c_file_path_size+1];
+		char m_Buffer[c_queue_size+1][c_log_size+1];
+		int m_Head;
+		int m_Tail;
+	};
 
-				fprintf(fp,"%s\r\n",line);
-			}
-			fclose(fp);
-		}
-	}
-private:
-	char m_GcResizeCaptureFile[c_file_path_size+1];
-	char m_Buffer[c_queue_size+1][c_log_size+1];
-	int m_Head;
-	int m_Tail;
-};
-
-static BacktraceLogger g_GcResizeLogger;
-static bool g_LogGcResizeToFile = false;
-
-void StartGcResizeLogger(const char* file)
-{
-	g_LogGcResizeToFile=true;
-	g_GcResizeLogger.Start(file);
-}
-void StopGcResizeLogger(void)
-{
-	g_LogGcResizeToFile=false;
-	g_GcResizeLogger.Flush();
-}
-
-namespace
-{
+	static BacktraceLogger g_GcLogger;
+	static bool g_LogToFile = false;
+	static UInt32 g_LogGcAllocMinSize = 0;
+	static UInt32 g_LogGcAllocMaxSize = 0;
+	static UInt32 g_LogNativeAllocMinSize = 0;
+	static UInt32 g_LogNativeAllocMaxSize = 0;
+	
 	struct BacktraceState
 	{
 		void** current;
@@ -132,16 +126,24 @@ namespace
 	{
 		for (size_t idx = 0; idx < count; ++idx) {
 			const void* addr = buffer[idx];
+			const void* raddr = 0;
 			const char* symbol = "";
+			const char* file = "";
 
 			Dl_info info;
-			if (dladdr(addr, &info) && info.dli_sname) {
-				symbol = info.dli_sname;
+			if (dladdr(addr, &info)) {
+				raddr = (const void*)((const char*)addr - (const char*)info.dli_fbase);
+				if(info.dli_sname)
+				    symbol = info.dli_sname;
+				if(info.dli_fname)
+				    file = info.dli_fname;
 			}
 
-			__android_log_print(ANDROID_LOG_INFO, title, "%s #%d:%p %s", prefix, idx, addr, symbol);
-			if(g_LogGcResizeToFile){
-				g_GcResizeLogger.Log(prefix, idx, addr, symbol);
+			if(g_LogToFile){
+				g_GcLogger.Log(prefix, idx, addr, raddr, symbol, file);
+			}
+			else{
+				__android_log_print(ANDROID_LOG_INFO, title, "%s #%d:%p %p %s|%s", prefix, idx, addr, raddr, symbol, file);
 			}
 		}
 	}
@@ -152,6 +154,88 @@ namespace
 		void* buffer[max];
 		dump_backtrace(title, prefix, buffer, capture_backtrace(buffer, max));
 	}
+
+	static void info_tologcat(const char* title, const char* prefix)
+	{
+		if(g_LogToFile){
+			g_GcLogger.Log(prefix, 0, 0, 0, "", "");
+		}
+		else{
+			__android_log_print(ANDROID_LOG_INFO, title, "%s #%d:%p %p %s|%s", prefix, 0, 0, 0, "", "");
+		}
+	}
+
+#if ENABLE_MEM_PROFILER
+	class NativeMemoryLogger
+	{
+	public:
+		static void Register(void)
+		{
+			GetMemoryManager().logAllocation.Register(&LogAllocationStack);
+			GetMemoryManager().logDeallocation.Register(&LogDeallocationStack);
+		}
+		static void LogAllocationStack(const MemoryManager::AllocationLogDetails& details)
+		{
+			if(g_LogToFile && details.size>=g_LogNativeAllocMinSize && details.size<=g_LogNativeAllocMaxSize){
+			    size_t totalAllocatedMemoryAfterAllocation = GetMemoryManager().GetTotalAllocatedMemory();
+			    //printf_console("%s (0x%p): %11zu\tTotal: %.2fMB (%zu) in %s:%d\n", details.function, details.ptr, details.size, totalAllocatedMemoryAfterAllocation / (1024.0f * 1024.0f), totalAllocatedMemoryAfterAllocation, details.file, details.line);
+			    	
+				char prefix[256];
+				snprintf(prefix, 255, "mynativealloc[ptr:%p size:%u after_size:%u]", details.ptr, details.size, totalAllocatedMemoryAfterAllocation/(1024*1024));
+				prefix[255] = 0;
+
+				backtrace_tologcat("myalloc", prefix);
+			}
+		}
+		static void LogDeallocationStack(void* ptr, size_t size, const char* function)
+		{
+			if(g_LogToFile && size>=g_LogNativeAllocMinSize && size<=g_LogNativeAllocMaxSize){
+			    size_t totalAllocatedMemoryAfterDeallocation = GetMemoryManager().GetTotalAllocatedMemory() - size;
+	  		    //printf_console("%s (0x%p): -%11zu\tTotal: %.2fMB (%zu)\n", function, ptr, size, totalAllocatedMemoryAfterDeallocation / (1024.0f * 1024.0f), totalAllocatedMemoryAfterDeallocation);
+	  		    
+				char prefix[256];
+				snprintf(prefix, 255, "mynativedealloc[ptr:%p size:%u after_size:%u]", ptr, size, totalAllocatedMemoryAfterDeallocation/(1024*1024));
+				prefix[255] = 0;
+
+				backtrace_tologcat("myalloc", prefix);
+			}
+		}
+	};
+#endif //ENABLE_MEM_PROFILER
+}
+
+void StartGcLogger(const char* file)
+{
+	g_LogToFile=true;
+	g_GcLogger.Start(file);
+#if ENABLE_MEM_PROFILER
+	if(g_LogNativeAllocMinSize!=0 || g_LogNativeAllocMaxSize!=0){
+		GetMemoryManager().StartLoggingAllocations(g_LogNativeAllocMinSize, true);
+	}
+#endif
+}
+void StopGcLogger(void)
+{
+#if ENABLE_MEM_PROFILER
+	GetMemoryManager().StopLoggingAllocations();
+#endif
+	g_LogToFile=false;
+	g_GcLogger.Flush();
+}
+void SetLogGcAllocSize(UInt32 minSize, UInt32 maxSize)
+{
+	g_LogGcAllocMinSize = minSize;
+	g_LogGcAllocMaxSize = maxSize;
+}
+void SetLogNativeAllocSize(UInt32 minSize, UInt32 maxSize)
+{
+	g_LogNativeAllocMinSize = minSize;
+	g_LogNativeAllocMaxSize = maxSize;
+#if ENABLE_MEM_PROFILER
+	if(g_LogToFile && (g_LogNativeAllocMinSize!=0 || g_LogNativeAllocMaxSize!=0)){
+		GetMemoryManager().StartLoggingAllocations(g_LogNativeAllocMinSize, true);
+	}
+#endif
 }
 
 #endif //PLATFORM_ANDROID
@@ -180,6 +264,12 @@ namespace profiling
 
         const bool enableDeepProfiling = HasARGV("deepprofiling");
         SetDeepProfilerEnabled(enableDeepProfiling);
+
+#if PLATFORM_ANDROID		
+#if ENABLE_MEM_PROFILER
+		NativeMemoryLogger::Register();
+#endif
+#endif //PLATFORM_ANDROID
     }
 
     void ScriptingProfiler::Initialize()
@@ -413,6 +503,32 @@ namespace profiling
                 profiler_end(&gGCCollect);
                 break;
         }
+#if PLATFORM_ANDROID		
+		if(evnt==kGCStartEvent || evnt==kGCEndEvent){
+			char prefix[256];
+			int64_t usedSize = il2cpp_gc_get_used_size();
+			int64_t heapSize = il2cpp_gc_get_heap_size();
+			snprintf(prefix, 255, "mygccollect[event:%d used:%llu heap:%llu]", evnt, usedSize, heapSize);
+			prefix[255] = 0;
+
+			backtrace_tologcat("myalloc", prefix);
+		}
+		else if((evnt & 0xc0000000)!=0){
+			uint uevnt = (uint)evnt;
+			uint flag = ((uevnt & 0xc0000000)>>30);
+			uint val = (uevnt & 0x3fffffff);
+			char prefix[256];
+			int64_t usedSize = il2cpp_gc_get_used_size();
+			int64_t heapSize = il2cpp_gc_get_heap_size();
+			snprintf(prefix, 255, "mygccollect[event:%d,%x used:%llu heap:%llu]", flag, val, usedSize, heapSize);
+			prefix[255] = 0;
+
+			if(flag==1)
+				backtrace_tologcat("myalloc", prefix);
+			else
+				info_tologcat("myalloc", prefix);
+		}
+#endif //PLATFORM_ANDROID
     }
 
     PROFILER_SAMPLER1(gGCResize, "GC.Resize", kProfilerGC, SInt64, "New size");
@@ -421,10 +537,40 @@ namespace profiling
         PROFILER_SAMPLE_WITH_METADATA(gGCResize, new_size);
 #if PLATFORM_ANDROID		
 		char prefix[256];
-		snprintf(prefix, 255, "mygcresize[ptr:%p size:%u]", ptr, new_size);
-		prefix[255] = 0;
-
-		backtrace_tologcat("mygcresize", prefix);
+		int64_t usedSize = il2cpp_gc_get_used_size();
+		int64_t heapSize = il2cpp_gc_get_heap_size();
+		if((new_size & 0xc0000000)!=0){
+			int64_t flag = ((new_size & 0xc0000000)>>30);
+			int64_t val = (new_size & 0x3fffffff);
+			switch(flag){
+			case 1:{
+				int64_t ignore_off = (val & 0x10000000) ? 1 : 0;
+				int64_t retry = (val & 0x20000000) ? 1 : 0;
+				val = (val & 0x0fffffff);
+				snprintf(prefix, 255, "mygcresize[val:%llu,%llu,%llu,%llu used:%llu heap:%llu]", flag, val, ignore_off, retry, usedSize, heapSize);
+				prefix[255] = 0;
+				backtrace_tologcat("myalloc", prefix);
+				}
+			break;
+			case 2:{
+				snprintf(prefix, 255, "mygcresize[val:%llu,%llx used:%llu heap:%llu]", flag, val, usedSize, heapSize);
+				prefix[255] = 0;
+				backtrace_tologcat("myalloc", prefix);
+				}
+			break;
+			case 3:{
+				snprintf(prefix, 255, "mygcresize[val:%llu,%llx used:%llu heap:%llu]", flag, val, usedSize, heapSize);
+				prefix[255] = 0;
+				info_tologcat("myalloc", prefix);
+				}
+			break;
+			}
+		}
+		else{
+			snprintf(prefix, 255, "mygcresize[size:%llu used:%llu heap:%llu]", new_size, usedSize, heapSize);
+			prefix[255] = 0;
+			backtrace_tologcat("myalloc", prefix);
+		}
 #endif //PLATFORM_ANDROID
     }
 
@@ -472,6 +618,18 @@ namespace profiling
     PROFILER_SAMPLER1(gGCAlloc, "GC.Alloc", kProfilerAllocation, SInt64, "size");
     static void sample_allocation(void* pr, ScriptingBackendNativeObjectPtr obj, ScriptingBackendNativeClassPtr klass)
     {
+#if PLATFORM_ANDROID	
+        UInt32 objSize = scripting_object_get_size(obj);
+		if(g_LogToFile && objSize>=g_LogGcAllocMinSize && objSize<=g_LogGcAllocMaxSize){
+			char prefix[256];
+			int64_t usedSize = il2cpp_gc_get_used_size();
+			int64_t heapSize = il2cpp_gc_get_heap_size();
+			snprintf(prefix, 255, "mygcalloc[size:%u used:%llu heap:%llu]", objSize, usedSize, heapSize);
+			prefix[255] = 0;
+
+			backtrace_tologcat("myalloc", prefix);
+		}
+#endif //PLATFORM_ANDROID
         // Avoid function calls when we are not interested in the event.
         profiling::Profiler* profiler = profiling::Profiler::GetActivePtr();
         if (gGCAlloc.GetCallback() == NULL && profiler == NULL)

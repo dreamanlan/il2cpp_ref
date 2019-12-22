@@ -701,7 +701,8 @@ GC_allochblk_nth(size_t sz, int kind, unsigned flags, int n, int may_split)
     flags = (flags & 0x3fffffff);
 
     if (after_expand && GC_on_heap_resize)
-        (*GC_on_heap_resize)(0x80000000ull + (flags << 28) + (kind << 26) + (n << 19) + (may_split << 18) + sz);
+		(*GC_on_heap_resize)(0x80000000ull + (flags << 28) + (kind << 26) + (n << 21) + (may_split << 20) + sz);
+        //(*GC_on_heap_resize)(0x80000000ull + (flags << 28) + (kind << 26) + (n << 19) + (may_split << 18) + sz);
 
     struct hblk *hbp;
     hdr * hhdr;                 /* Header corr. to hbp */
@@ -741,7 +742,7 @@ GC_allochblk_nth(size_t sz, int kind, unsigned flags, int n, int may_split)
         }
 
         if (after_expand)
-            log_on_heap_resize(1, ix);
+            log_on_heap_resize(1, size_avail + ix);
 
         if (!IS_UNCOLLECTABLE(kind) && (kind != PTRFREE
             || size_needed > (signed_word)MAX_BLACK_LIST_ALLOC)) {
@@ -761,12 +762,12 @@ GC_allochblk_nth(size_t sz, int kind, unsigned flags, int n, int may_split)
             thishbp = lasthbp;
 
             if (after_expand)
-                log_on_heap_resize(2, ix);
+                log_on_heap_resize(2, size_avail + ix);
 
             if (size_avail >= size_needed) {
 
                 if (after_expand)
-                    log_on_heap_resize(3, ix);
+                    log_on_heap_resize(3, size_needed + ix);
 
                 if (thishbp != hbp) {
 
@@ -820,7 +821,7 @@ GC_allochblk_nth(size_t sz, int kind, unsigned flags, int n, int may_split)
                 size_avail = orig_avail;
 
                 if (after_expand)
-                    log_on_heap_resize(7, ix);
+                    log_on_heap_resize(7, size_avail + ix);
 
             }
             else if (size_avail == 0 && size_needed == HBLKSIZE
@@ -880,7 +881,7 @@ GC_allochblk_nth(size_t sz, int kind, unsigned flags, int n, int may_split)
         }
 
         if (after_expand)
-            log_on_heap_resize(11, ix);
+            log_on_heap_resize(11, sz);
 
         if (size_avail >= size_needed) {
 #               ifdef USE_MUNMAP
@@ -904,14 +905,14 @@ GC_allochblk_nth(size_t sz, int kind, unsigned flags, int n, int may_split)
     if (0 == hbp) return 0;
 
     if (after_expand)
-        log_on_heap_resize(13, ix);
+        log_on_heap_resize(13, (n<<8)+ix);
 
     /* Add it to map of valid blocks */
     if (!GC_install_counts(hbp, (word)size_needed)) return(0);
     /* This leaks memory under very rare conditions. */
 
     if (after_expand)
-        log_on_heap_resize(14, ix);
+        log_on_heap_resize(14, (may_split<<8)+ix);
 
     /* Set up header */
     if (!setup_header(hhdr, hbp, sz, kind, flags)) {
@@ -920,7 +921,7 @@ GC_allochblk_nth(size_t sz, int kind, unsigned flags, int n, int may_split)
     }
 
     if (after_expand)
-        log_on_heap_resize(15, ix);
+        log_on_heap_resize(15, (kind<<8)+ix);
 
 #   ifndef GC_DISABLE_INCREMENTAL
     /* Notify virtual dirty bit implementation that we are about to */
@@ -936,11 +937,11 @@ GC_allochblk_nth(size_t sz, int kind, unsigned flags, int n, int may_split)
     /* consecutive failures.                                            */
     GC_fail_count = 0;
 
-    if (after_expand)
-        log_on_heap_resize(16, ix);
-
     GC_large_free_bytes -= size_needed;
-    GC_ASSERT(IS_MAPPED(hhdr));
+    GC_ASSERT(IS_MAPPED(hhdr))
+
+    if (after_expand)
+        log_on_heap_resize(16, GC_large_free_bytes);
     return(hbp);
 }
 
